@@ -25,6 +25,16 @@
   c
 }
 
+// Get file path of card n
+#let get-file(n) = {
+  ASSETS-FOLDER + "card" + str(n) + ".png"
+}
+
+
+/***********/
+/* PARSING */
+/***********/
+
 // Read the number of pairs of cards used
 #let get-nb-cards(doc) = { 2 }
 
@@ -33,7 +43,19 @@
 
 // Read the (optional) names of the players if provided
 // Else fill with "Player x" where x is an integer geq than 1
-#let get-players-names(doc, nb-players) = { ("Yo", "Le reuf") }
+#let get-players-names(doc, nb-players) = { ("John", "Doe") }
+
+// Parse actions from the document
+// Returns an array containing fully completed locations and validations
+// One entry out of three is a validation (turning cards back / removing them)
+// Also checks all locations are within bounds
+// But doesn't check that location isn't empty (card might have been found)
+#let get-actions(doc, height, width) = { () }
+
+
+/*****************/
+/* INITIAL STATE */
+/*****************/
 
 // Returns a pair (height, width)
 // We want the more balanced rectangle as possible
@@ -92,27 +114,89 @@
   (rng, cards-grid)
 }
 
-// Get file path of card n
-#let get-file(n) = {
-  ASSETS-FOLDER + "card" + str(n) + ".png"
-}
 
-// Counting the number of empty (none) cards
+/****************************/
+/* INFO ABOUT CURRENT STATE */
+/****************************/
+
+// Counting the number of non-empty pairs of cards
 #let get-nb-left-cards(cards) = {
-  cards
-    .map(row => row.fold(
-      0,
-      (acc, card) => if card == none { acc } else { acc + 1 },
-    ))
-    .sum()
+  calc.quo(
+    cards
+      .map(row => row.fold(
+        0,
+        (acc, card) => if card == none { acc } else { acc + 1 },
+      ))
+      .sum(),
+    2,
+  )
 }
 
-// Main loop
-#let simulate-game(doc, rng, nb-cards, nb-players, initial-cards) = {
-  let player = 0
-  let scores
-  (initial-cards, player, (0, 2))
+// Errors if card is empty
+#let check-card-not-empty(cards, h, w) = {
+  if cards.at(h).at(w) == none {
+    panic("This card has already been found.")
+  }
 }
+
+
+/*************/
+/* MAIN LOOP */
+/*************/
+#let simulate-game(doc, nb-cards, nb-players, initial-cards) = {
+  // Initial state
+  let cards = initial-cards
+  let player = 0
+  let scores = ()
+  for _ in range(nb-players) {
+    scores.push(0)
+  }
+
+  // Simulate each action
+  let actions = get-actions(doc, ..get-grid-size(nb-cards))
+  actions = actions.rev()
+  while actions.len() > 0 {
+    // First action is a cell location
+    let (h1, w1) = actions.pop()
+    check-card-not-empty(cards, h1, w1)
+    cards.at(h1).at(w1).at(1) = true // set visibility to true
+
+    // Second action - if it exists, should be a different cell location
+    if actions.len() == 0 { break }
+    let (h2, w2) = actions.pop()
+    check-card-not-empty(cards, h2, w2)
+    if (h2, w2) == (h1, w1) {
+      panic("You must play two different cells.")
+    }
+    cards.at(h2).at(w2).at(1) = true // set visibility to true
+
+    // If linebreak, validate action
+    if actions.len() == 0 { break }
+    let _ = actions.pop()
+    if cards.at(h1).at(w1).at(0) == cards.at(h2).at(w2).at(0) {
+      // If the cards were the same : win turn
+      // Removing found cards
+      cards.at(h1).at(w1) = none
+      cards.at(h2).at(w2) = none
+      scores.at(player) += 1
+      // Note that value of player remains unchanged
+    } else {
+      // Else cards were different
+      // Setting back visibility to false
+      cards.at(h1).at(w1).at(1) = false
+      cards.at(h2).at(w2).at(1) = false
+      player = calc.rem(player + 1, nb-players) // turn of next player
+    }
+  }
+
+  // Return final state
+  (cards, player, scores)
+}
+
+
+/****************/
+/* GAME DISPLAY */
+/****************/
 
 // Display users, pairs of cards left, scoreboard...
 #let display-info(
@@ -187,7 +271,10 @@
   table(align: center + horizon, columns: width + 1, ..cells.flatten())
 }
 
-// Main function
+
+/*****************/
+/* MAIN FUNCTION */
+/*****************/
 #let game(doc, seed: 10) = {
   // Page size and margin
   set page(
@@ -214,7 +301,6 @@
   // Simulate all played rounds to get current state
   let (cards, player, scores) = simulate-game(
     doc,
-    rng,
     nb-cards,
     nb-players,
     initial-cards,
