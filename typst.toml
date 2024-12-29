@@ -1,0 +1,16 @@
+[package]
+name = "memory-game"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["Rémi Germe <@remigerme>"]
+license = "MIT"
+description = "A memory game in Typst."
+repository = "https://github.com/remigerme/memory-game"
+keywords = ["game", "fun", "memory"]
+categories = ["fun"]
+exclude = [".gitignore", "thumbnail.png"]
+
+[template]
+path = "template"
+entrypoint = "main.typ"
+thumbnail = "thumbnail.png"
