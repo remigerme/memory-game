@@ -36,14 +36,84 @@
 /***********/
 
 // Read the number of pairs of cards used
-#let get-nb-cards(doc) = { 2 }
+#let get-nb-cards(doc) = {
+  // Skipping until cards identifier
+  let i = doc.children.position(x => x == [Cards])
+  if (i == none) {
+    panic("Couldn't find the cards identifier. Make sure there is a `Cards` somewhere.")
+  }
 
-// Read the number of players from the document
-#let get-nb-players(doc) = { 2 }
+  // Skipping whitespace and column
+  i += 1
+  while doc.children.at(i) == [ ] or doc.children.at(i) == [:] { i += 1 }
 
-// Read the (optional) names of the players if provided
-// Else fill with "Player x" where x is an integer geq than 1
-#let get-players-names(doc, nb-players) = { ("John", "Doe") }
+  // Parsing the number
+  if doc.children.at(i).func() != text {
+    panic("Please enter a number of cards")
+  }
+  let nb-cards = int(doc.children.at(i).text)
+
+  // Checking if the number is valid
+  if nb-cards < 1 or nb-cards > MAX-NB-CARDS {
+    panic("Maximum number of cards is " + str(MAX-NB-CARDS))
+  }
+
+  nb-cards
+}
+
+// Read the number of players from the document and also
+// read the (optional) names of the players if provided,
+// else fill with "Player x" where x is an integer geq than 1
+#let get-players(doc) = {
+  // Skipping until players identifier
+  let i = doc.children.position(x => x == [Players])
+  if (i == none) {
+    panic("Couldn't find the players identifier. Make sure there is a `Players` somewhere.")
+  }
+
+  // Skipping whitespace and column
+  i += 1
+  while doc.children.at(i) == [ ] or doc.children.at(i) == [:] { i += 1 }
+
+  // Parsing the number
+  if doc.children.at(i).func() != text {
+    panic("Please enter a number of players")
+  }
+  let nb-players = int(doc.children.at(i).text)
+  if nb-players < 1 {
+    panic("There must be at least one player.")
+  }
+
+  // Skip whitespace
+  i += 1
+  while doc.children.at(i) == [ ] { i += 1 }
+
+  // Then trying to read optional names of players
+  let players = ()
+  if doc.children.at(i).func() != text {
+    // First case : the names were not provided
+    for p in range(nb-players) {
+      players.push("Player " + str(p + 1))
+    }
+  } else {
+    // Second case : names were provided (in theory)
+    let s = doc.children.at(i).text
+    if not s.starts-with("(") or not s.ends-with(")") {
+      panic("Please provide the names within parentheses")
+    }
+
+    players = s.slice(1, -1).split(",").map(p => p.trim(" "))
+    if players.len() != nb-players {
+      panic(
+        "If you provide optional names, please provide "
+          + str(nb-players)
+          + " of them",
+      )
+    }
+  }
+
+  (nb-players, players)
+}
 
 // Parse actions from the document
 // Returns an array containing fully completed locations and validations
@@ -285,8 +355,7 @@
 
   // Inputs from doc
   let nb-cards = get-nb-cards(doc)
-  let nb-players = get-nb-players(doc)
-  let players-names = get-players-names(doc, nb-players) // Optional names
+  let (nb-players, players-names) = get-players(doc)
 
   // Get initial state
   let rng = gen-rng(seed)
