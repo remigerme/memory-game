@@ -35,6 +35,8 @@
 /* PARSING */
 /***********/
 
+// Horrible stuff in this section - forgive me
+
 // Read the number of pairs of cards used
 #let get-nb-cards(doc) = {
   // Skipping until cards identifier
@@ -115,12 +117,86 @@
   (nb-players, players)
 }
 
+// Return (h, w) corresponding to given s or none if s is invalid
+#let get-location-from-str(s, height, width) = {
+  if s.len() != 2 { return none }
+
+  // Checking bounds for height
+  let h = int(s.at(1))
+  if not (1 <= h and h <= height) { return none }
+
+  // Checking bounds for width
+  let ws = lower(s.at(0))
+  let iw = str.to-unicode(ws)
+  let ia = str.to-unicode("a")
+  if not (ia <= iw and iw < ia + width) { return none }
+
+  (h - 1, iw - ia)
+}
+
 // Parse actions from the document
 // Returns an array containing fully completed locations and validations
 // One entry out of three is a validation (turning cards back / removing them)
 // Also checks all locations are within bounds
 // But doesn't check that location isn't empty (card might have been found)
-#let get-actions(doc, height, width) = { () }
+#let get-actions(doc, height, width) = {
+  // Skipping until start identifier
+  let i = doc.children.position(x => x == [Start])
+  if (i == none) {
+    panic("Couldn't find the start identifier. Make sure there is a `Start` somewhere.")
+  }
+
+  // Skipping whitespace and parbreak
+  i += 1
+  while (
+    i < doc.children.len()
+      and (doc.children.at(i) == [ ] or doc.children.at(i).func() == parbreak)
+  ) {
+    i += 1
+  }
+
+  let actions = ()
+  let awaiting_validation = false
+  // Read as long as possible
+  while (i < doc.children.len()) {
+    // Expecting a line break to finish turn
+    if awaiting_validation {
+      if doc.children.at(i) == [ ] or doc.children.at(i).func() == parbreak {
+        actions.push(none)
+        awaiting_validation = false
+      } else {
+        panic("Validation (line break) was expected." + doc)
+      }
+    } // Previous turn has been validated, now expecting locations played for the turn
+    else {
+      // If content is not text, ignoring it (e.g. space or parbreak)
+      if doc.children.at(i).func() != text { continue }
+
+      let s = doc.children.at(i).text.split(" ")
+      // There is one (potentially partial) location
+      if s.len() == 1 {
+        let loc = get-location-from-str(s.at(0), height, width)
+        if loc != none { actions.push(loc) }
+        break
+      } // There are two locations (the second one might be partial)
+      else if s.len() == 2 {
+        let loc1 = get-location-from-str(s.at(0), height, width)
+        if loc1 == none { panic("A previous move could not be determined.") }
+        actions.push(loc1)
+        let loc2 = get-location-from-str(s.at(1), height, width)
+        if loc2 == none { break }
+        actions.push(loc2)
+        awaiting_validation = true
+      } // Did not expect this
+      else {
+        panic("Too much arguments for this line.")
+      }
+    }
+    i += 1
+  }
+
+  actions
+}
 
 
 /*****************/
@@ -169,7 +245,7 @@
   )
 
   let (rng, cards) = choose-cards(rng, n) // Returns an array of n cards
-  cards = cards.map(x => (x, true)) // Add visibility information
+  cards = cards.map(x => (x, false)) // Add visibility information
   cards = extend(cards, cards) // Each card should appear twice
   (rng, cards) = shuffle(rng, cards) // Shuffle the cards
   // Now, time to un-flatten the cards and create the grid
@@ -211,7 +287,7 @@
 
 
 /*************/
-/* MAIN LOOP */
+/* GAME LOOP */
 /*************/
 #let simulate-game(doc, nb-cards, nb-players, initial-cards) = {
   // Initial state
@@ -223,7 +299,7 @@
   }
 
   // Simulate each action
-  let actions = get-actions(doc, ..get-grid-size(nb-cards))
+  let actions = get-actions(doc, ..get-grid-size(2 * nb-cards))
   actions = actions.rev()
   while actions.len() > 0 {
     // First action is a cell location
